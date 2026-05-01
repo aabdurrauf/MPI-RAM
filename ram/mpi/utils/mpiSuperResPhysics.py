@@ -6,11 +6,10 @@ import torch.nn.functional as F
 # otherwise, check the operator again.
 # TODO: visualize it
 class MPISuperResPhysics(dinv.physics.Physics):
-    def __init__(self, dataset, scale_factor, device="cuda"):
+    def __init__(self, dataset, scale_factor):
         super().__init__()
         self.dataset = dataset
         self.s = scale_factor
-        self.device = device
 
     def A(self, x):
         # x: normalized HR

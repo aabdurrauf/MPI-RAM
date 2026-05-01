@@ -1,8 +1,11 @@
 # import libraries
+import math
+
 import torch
 import numpy as np
 from scipy.io import loadmat
 import os
+from ram.mpi.utils.mpiDataset import MpiDataset
 from utils.mpiSuperResUtils import downsampleImageNP, interpImage, normalize
 
 
@@ -219,3 +222,158 @@ class loadMtxFromOpenMPI:
                 dnmInterp2 = torch.cat((dnmInterp2, dnmInterp3), 1)
                 
             self.Bicubic_list.append(dnmInterp2)
+
+
+
+
+
+def get_train_data(file_dir, scale_factor, batch_size, step_num, n1=32, n2=32, snrThreshold=5, useAugmentation=False):
+    trainLoader = loadMtxFromOpenMPI(file_dir, scale_factor, n1, n2, True, True)
+    trainLoader.preprocessAndScaleMtxGlocally()
+    # by using global max min to normalize, the values became very similar to each other
+    # print("global min max HR:", trainLoader.Hr_list[0][0][0][0])
+    # print("global min max LR:", trainLoader.Lr_list[0][0][0][0])
+
+    totNoisePerElem = (2 * n1 * n2) ** (1/2)
+    print("Total Noise Per System Matrix: ",totNoisePerElem)
+
+    trainlr = torch.cat(tuple(trainLoader.Lr_list),0)
+    trainhr = torch.cat(tuple(trainLoader.Hr_list),0)
+    # trainBi = torch.cat(tuple(trainLoader.Bicubic_list), 0)
+    max_arr = np.reshape(trainLoader.mxList,(-1,1))
+    min_arr = np.reshape(trainLoader.mnList,(-1,1))
+    nsStdEst_arr = torch.cat(tuple(trainLoader.nsKestirimi_list), 0)
+
+    def denormalize(x,max,min,up,down):
+        if (len(x.shape) - len(max.shape)) == 2:
+            return ((x-down)/up)*(max[:,None,None]-min[:,None,None])+min[:,None,None]
+        else:
+            return ((x-down)/up)*(max[:,None,None,None]-min[:,None,None,None])+min[:,None,None,None]
+        
+
+    train_hrDenorm = denormalize(trainhr, max_arr, min_arr, 0.7, 0.15)
+    sigPow = torch.sum(torch.sum(torch.sum(torch.abs(train_hrDenorm)**2, axis = 3), axis = 2), axis = 1).squeeze().sqrt()
+    print("Train Samples: {0}".format(trainlr.shape[0]))
+
+    snrEst_arr = sigPow / totNoisePerElem
+    selectedElems = (snrEst_arr > snrThreshold).squeeze()
+
+    trainlr = trainlr[selectedElems, :, :, :]
+    trainhr = trainhr[selectedElems, :, :, :]
+    max_arr = max_arr[selectedElems, :]
+    min_arr = min_arr[selectedElems, :]
+    nsStdEst_arr = nsStdEst_arr[selectedElems, :]
+    snrEst_arrCropped = snrEst_arr[selectedElems]
+
+    train_hrDenorm = denormalize(trainhr, max_arr, min_arr, 0.7, 0.15)
+    sigPows = torch.sum(torch.sum(torch.abs(train_hrDenorm)**2, axis = 3), axis = 2).squeeze().sqrt()
+    print("Train Samples after Filtering: {0}".format(trainlr.shape[0]))
+
+    ordercopy = np.linspace(0,trainlr.shape[0]-1,trainlr.shape[0],dtype=int)
+    np.random.seed(64)
+    np.random.shuffle(ordercopy)
+    trainhr = trainhr[ordercopy,:,:,:]
+    trainlr = trainlr[ordercopy,:,:,:]
+    max_arr = max_arr[ordercopy]
+    min_arr = min_arr[ordercopy]
+    nsStdEst_arr = nsStdEst_arr[ordercopy]
+    copylr = torch.clone(trainlr)
+    copyhr = torch.clone(trainhr)
+    copymax = torch.clone(torch.Tensor(max_arr))
+    copymin = torch.clone(torch.Tensor(min_arr))
+
+
+    ## Add test data load here if needed ##
+
+
+    ordertrain = np.linspace(0,trainlr.shape[0]-1,trainlr.shape[0],dtype=int)
+    trainhr = copyhr
+    trainlr = copylr
+    maxhr = copymax.cuda()
+    minhr = copymin.cuda()
+
+    if (useAugmentation):
+        trainhrAggr = torch.cat((trainhr, torch.flip(trainhr, [2]), torch.flip(trainhr, [3]), torch.flip(trainhr, [2, 3])) , dim = 0)
+        trainlrAggr = torch.cat((trainlr, torch.flip(trainlr, [2]), torch.flip(trainlr, [3]), torch.flip(trainlr, [2, 3])) , dim = 0)
+        maxhrAggr = torch.cat( (maxhr, maxhr, maxhr, maxhr), dim = 0 )
+        minhrAggr = torch.cat( (minhr, minhr, minhr, minhr), dim = 0 )
+
+        ordertrainAggr = np.linspace(0,trainlrAggr.shape[0]-1,trainlrAggr.shape[0],dtype=int)
+
+    if (useAugmentation):
+        trainDS = MpiDataset(trainhrAggr, trainlrAggr, maxhrAggr, minhrAggr, batch_size, 0.7, 0.15, ordertrainAggr)
+        trainDS.shuffleAll()
+        train_size = np.ceil(trainlrAggr.shape[0]//batch_size) # from code
+        epoch_nb = int(math.ceil(step_num / train_size)) # from code
+    else:
+        trainDS = MpiDataset(trainhr, trainlr, maxhr, minhr, batch_size, 0.7, 0.15, ordertrain)
+        trainDS.shuffleAll()
+        train_size = np.ceil(trainlr.shape[0]//batch_size) # from code
+        epoch_nb = int(math.ceil(step_num / train_size)) # from code
+
+    print("Num Epochs:",epoch_nb)
+
+    return trainDS, copymax, copymin, epoch_nb
+
+def get_eval_data(file_dir, scale_factor, batch_size, n1=32, n2=32, snrThreshold=5):
+    evalLoader = loadMtxFromOpenMPI(file_dir, scale_factor, n1, n2, True, True)
+    evalLoader.preprocessAndScaleMtxGlocally()
+
+    totNoisePerElem = (2 * n1 * n2) ** (1/2)
+    print("Total Noise Per System Matrix: ",totNoisePerElem)
+
+    evallr = torch.cat(tuple(evalLoader.Lr_list),0)
+    evalhr = torch.cat(tuple(evalLoader.Hr_list),0)
+    max_arr = np.reshape(evalLoader.mxList,(-1,1))
+    min_arr = np.reshape(evalLoader.mnList,(-1,1))
+    nsStdEst_arr = torch.cat(tuple(evalLoader.nsKestirimi_list), 0)
+
+    def denormalize(x,max,min,up,down):
+        if (len(x.shape) - len(max.shape)) == 2:
+            return ((x-down)/up)*(max[:,None,None]-min[:,None,None])+min[:,None,None]
+        else:
+            return ((x-down)/up)*(max[:,None,None,None]-min[:,None,None,None])+min[:,None,None,None]
+        
+
+    eval_hrDenorm = denormalize(evalhr, max_arr, min_arr, 0.7, 0.15)
+    sigPow = torch.sum(torch.sum(torch.sum(torch.abs(eval_hrDenorm)**2, axis = 3), axis = 2), axis = 1).squeeze().sqrt()
+    print("Evaluation Samples: {0}".format(evallr.shape[0]))
+
+    snrEst_arr = sigPow / totNoisePerElem
+    selectedElems = (snrEst_arr > snrThreshold).squeeze()
+
+    evallr = evallr[selectedElems, :, :, :]
+    evalhr = evalhr[selectedElems, :, :, :]
+    max_arr = max_arr[selectedElems, :]
+    min_arr = min_arr[selectedElems, :]
+    nsStdEst_arr = nsStdEst_arr[selectedElems, :]
+    snrEst_arrCropped = snrEst_arr[selectedElems]
+
+    eval_hrDenorm = denormalize(evalhr, max_arr, min_arr, 0.7, 0.15)
+    sigPows = torch.sum(torch.sum(torch.abs(eval_hrDenorm)**2, axis = 3), axis = 2).squeeze().sqrt()
+    print("Evaluation Samples after Filtering: {0}".format(evallr.shape[0]))
+
+    ordercopy = np.linspace(0,evallr.shape[0]-1,evallr.shape[0],dtype=int)
+    np.random.seed(64)
+    np.random.shuffle(ordercopy)
+    evalhr = evalhr[ordercopy,:,:,:]
+    evallr = evallr[ordercopy,:,:,:]
+    max_arr = max_arr[ordercopy]
+    min_arr = min_arr[ordercopy]
+    nsStdEst_arr = nsStdEst_arr[ordercopy]
+    copylr = torch.clone(evallr)
+    copyhr = torch.clone(evalhr)
+    copymax = torch.clone(torch.Tensor(max_arr))
+    copymin = torch.clone(torch.Tensor(min_arr))
+
+    ordereval = np.linspace(0,evallr.shape[0]-1,evallr.shape[0],dtype=int)
+    evalhr = copyhr
+    evallr = copylr
+    maxhr = copymax.cuda()
+    minhr = copymin.cuda()
+
+    
+    evalDS = MpiDataset(evalhr, evallr, maxhr, minhr, batch_size, 0.7, 0.15, ordereval)
+    evalDS.shuffleAll()
+
+    return evalDS, copymax, copymin
