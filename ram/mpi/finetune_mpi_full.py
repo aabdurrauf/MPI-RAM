@@ -39,8 +39,6 @@ n1 = n2 = 32
 torch.cuda.set_device(useGPUno)
 
 trainLoader = loadMtxFromOpenMPI(file_dir, scale_factor, n1, n2, True, True)
-
-trainLoader = loadMtxFromOpenMPI(file_dir, scale_factor, n1, n2, True, True)
 trainLoader.preprocessAndScaleMtxGlocally()
 # by using global max min to normalize, the values became very similar to each other
 # print("global min max HR:", trainLoader.Hr_list[0][0][0][0])

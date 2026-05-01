@@ -26,15 +26,6 @@ import argparse
 import torch.nn.functional as F
 from ram.models.ram import RAM
 
-# def A(x, scale_factor):
-#     return F.avg_pool2d(x, kernel_size=scale_factor, stride=scale_factor)
-
-# # def AT(y, scale_factor):
-# #     return F.interpolate(y, scale_factor=scale_factor, mode='nearest')
-
-# def AT(y, scale_factor):
-#     y_up = F.interpolate(y, scale_factor=scale_factor, mode='nearest')
-#     return y_up / (scale_factor ** 2)
 
 
 visualize = False
@@ -251,67 +242,6 @@ def inferenceFunction(opt):
             }
         )
 
-
-
-###############################################################################
-        # physics = MPISuperResPhysics(dataset, scale_factor=2, device=device)
-        # model = RAM(device=device)
-        
-        # for file in sorted(os.listdir(readDir)):
-        #     with torch.no_grad():
-        #         if (file[-3:] == ".pt"):
-        #             if ("{0}x".format(scale_factor) in file):
-        #                 useNoisyProjection = 0
-
-        #                 if ("CvTRDN" in file):
-        #                     useNoisyProjection = 1
-        #                     if (scale_factor == 2):
-        #                         config={'inChannel': 2, 'outChannel': 2, 'initialConvFeatures': 24, 'scaleFactor': 2, 'rdn_nb_of_features': 24, 'rdn_nb_of_blocks': 4, 'rdn_layer_in_each_block': 5, 'rdn_growth_rate': 6, 'img_size1': n1 // 2, 'img_size2': n2 // 2, 'cvt_out_channels': 64, 'cvt_dim': 64, 'num_attention_heads': 8, 'convAfterConcatLayerFeatures': 48}
-        #                     elif (scale_factor == 4):
-        #                         config = {'inChannel': 2, 'outChannel': 2, 'initialConvFeatures': 24, 'scaleFactor': 4, 'rdn_nb_of_features': 24, 'rdn_nb_of_blocks': 4, 'rdn_layer_in_each_block': 8, 'rdn_growth_rate': 6, 'img_size1': n1 // 4, 'img_size2': n2 // 4, 'cvt_out_channels': 64, 'cvt_dim': 64, 'num_attention_heads': 8, 'convAfterConcatLayerFeatures': 48}
-        #                     elif (scale_factor == 8):
-        #                         config = {'inChannel': 2, 'outChannel': 2, 'initialConvFeatures': 64, 'scaleFactor': 8, 'rdn_nb_of_features': 24, 'rdn_nb_of_blocks': 4, 'rdn_layer_in_each_block': 9, 'rdn_growth_rate': 6, 'img_size1': n1 // 8, 'img_size2': n2 // 8, 'cvt_out_channels': 64, 'cvt_dim': 64, 'num_attention_heads': 8, 'convAfterConcatLayerFeatures': 48}
-
-        #                     model = par_cvt_rdnDualNonSq(config).cuda()
-        #                 else:
-        #                     continue
-        #                 model.eval()
-        #                 for para in model.parameters():
-        #                     para.requires_grad = False
-        #                 print("Processing: ",file)
-
-        #                 model.load_state_dict(torch.load(readDir +file,map_location=torch.device('cuda:{0}'.format(useGPUno))))
-        #                 nsPwrProjection = totNoisePerElem / scale_factor ** 2
-
-        #                 gc.collect()
-        #                 torch.cuda.empty_cache()
-
-    #                     temp_test_nrmseDivider = float(torch.norm(testDS.denormalize(testDS.HR)))
-    #                     temp_test_nrmse, y_model_out = test_model_wbatch_DS(model, testDS)
-    #                     oldBs = testDS.bs
-    #                     testDS.bs = testDS.LR.shape[0]
-    #                     nsEpsTest = testDS.noisePowerNormalize(nsPwrProjection, 0).reshape(-1, 1)
-
-    #                     y_model_NsPrj = torch.zeros_like(testDS.HR)
-    #                     iii = 0
-    #                     while(iii<y_model_NsPrj.shape[0]-(y_model_NsPrj.shape[0]%bs)):
-    #                         y_model_NsPrj[iii:iii+bs] = projectToNoiseLevel(y_model_out[iii:iii+bs], testDS.LR[iii:iii+bs], nsEpsTest[iii:iii+bs], int(scale_factor), int(scale_factor))
-    #                         iii += bs
-    #                     y_model_NsPrj[iii:] = projectToNoiseLevel(y_model_out[iii:], testDS.LR[iii:], nsEpsTest[iii:], int(scale_factor), int(scale_factor))
-
-    #                     temp_test_nrmse_new = float(torch.norm(testDS.noisePowerDeNormalize(y_model_NsPrj - testDS.HR, 0)))
-    #                     testDS.bs = oldBs
-
-    #                     temp_test_nrmse = temp_test_nrmse_new / temp_test_nrmseDivider
-    #                     print("nRMSE for HR measurement: {0:.4f}".format(float((test_copyhr.shape[0]/2 * 32*32)**(1/2) / temp_test_nrmseDivider)))
-
-        #                 torch.cuda.empty_cache()
-        #                 gc.collect()
-        #                 torch.cuda.empty_cache()
-
-        #                 print("estimated nRMSE for all unfiltered rows: ", float(temp_test_nrmse))
-        #                 savemat(saveDir + file[:-3].replace(":","_") +"_save_snr0.mat" ,{'y_model_NsPrj':testDS.denormalize(y_model_NsPrj).cpu().detach().numpy()})
-    
 if __name__ == "__main__":
     inferenceFunction(opt)
 

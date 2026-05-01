@@ -25,7 +25,7 @@ from ram.models.ram import RAM
 visualize = False
 device = "cuda"
 useGPUno = 0
-display_some_samples = True
+display_some_samples = False
 
 # manually assigned, could be done via command params
 bs = 64
@@ -137,10 +137,10 @@ print("Num Epochs:",epoch_nb)
 model_ram = RAM(device=device)
 
 print(f"\nRunning RAM fine-tuning for scale x{scale_factor}...\n")
-# currently the bs is 1
+
 bs = 2048
 inner_bs = 32
-# for i in range(0, 5, bs): # used for visualizing 5 samples. set display_some_samples to True and comment all lines after that if block
+# for i in range(0, 5, bs): # used for visualizing 5 samples. set display_some_samples to True
 for i in range(0, trainDS.LR.shape[0], bs):
     y = trainDS.LR[i:i+bs].to(device)   # [1, C, H, W]
     x_gt = trainDS.HR[i:i+bs].to(device)
