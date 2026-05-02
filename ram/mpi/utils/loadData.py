@@ -314,9 +314,13 @@ def get_train_data(file_dir, scale_factor, batch_size, step_num, n1=32, n2=32, s
 
     return trainDS, copymax, copymin, epoch_nb
 
-def get_eval_data(file_dir, scale_factor, batch_size, n1=32, n2=32, snrThreshold=5):
+def get_eval_data(file_dir, scale_factor, batch_size, n1=32, n2=32, snrThreshold=5, use_global_max_min=True):
     evalLoader = loadMtxFromOpenMPI(file_dir, scale_factor, n1, n2, True, True)
-    evalLoader.preprocessAndScaleMtxGlocally()
+    
+    if use_global_max_min:
+        evalLoader.preprocessAndScaleMtxGlocally()
+    else:
+        evalLoader.preprocessAndScaleSysMtx()
 
     totNoisePerElem = (2 * n1 * n2) ** (1/2)
     print("Total Noise Per System Matrix: ",totNoisePerElem)

@@ -1,3 +1,4 @@
+# .venv310/Scripts/python ram/mpi/evaluate.py --ckpt MPI_single_image_500ep_lr0.000025_lossL1/ckp_499.pth.tar
 
 import argparse
 import glob
@@ -67,7 +68,7 @@ def main() -> None:
     file_dir = "ram/mpi/data/train/"
     scale_factor = 2
     bs = 64
-    evalDS, copymax, copymin = get_eval_data(file_dir, scale_factor, bs, 32, 32, 5)
+    evalDS, copymax, copymin = get_eval_data(file_dir, scale_factor, bs, 32, 32, 5, use_global_max_min=False)
 
     eval_model = RAM(device=str(device)).to(device)
     _load_checkpoint(eval_model, ckpt_path, device)
@@ -99,12 +100,13 @@ def main() -> None:
             x_eval = eval_model(y_batch, physics=physics)
 
         num_show = 5
-        show_idx = torch.linspace(0, y_batch.shape[0] - 1, num_show).long()
+        # show_idx = torch.linspace(0, y_batch.shape[0] - 1, num_show).long()
+        show_idx = torch.linspace(0, num_show, num_show).long()
 
         fig, axes = plt.subplots(3, num_show, figsize=(4 * num_show, 10))
         for col, idx in enumerate(show_idx):
-            lr_mag = _to_magnitude_2ch(y[idx]).cpu().numpy()
-            gt_mag = _to_magnitude_2ch(x_gt[idx]).cpu().numpy()
+            lr_mag = _to_magnitude_2ch(y_batch[idx]).cpu().numpy()
+            gt_mag = _to_magnitude_2ch(x_gt_batch[idx]).cpu().numpy()
             pred_mag = _to_magnitude_2ch(x_eval[idx]).cpu().numpy()
 
             axes[0, col].imshow(lr_mag, cmap="gray")

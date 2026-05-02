@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import datetime
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if PROJECT_ROOT not in sys.path:
@@ -10,7 +11,7 @@ from ram.mpi.utils.mpiSuperResPhysics import MPISuperResPhysics
 
 import torch
 import deepinv as dinv
-from ram.models.ram import RAM, finetune, finetune_mpi
+from ram.models.ram import RAM, finetune_mpi
 from torchvision import transforms
 device = dinv.utils.get_freer_gpu() if torch.cuda.is_available() else "cpu"
 
@@ -27,6 +28,11 @@ visualize = True
 
 snrThreshold = 5
 n1 = n2 = 32
+
+additional_info = ''
+timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+final_ckpt_path = f"finetune_mpi_ckp_scale{scale_factor}x_iter{max_iter}_{timestamp}{additional_info}.pth.tar"
+
 trainDS, copymax, copymin, epoch_nb = get_train_data(file_dir, scale_factor, bs, step_num, n1, n2, snrThreshold, useAugmentation, use_global_max_min=False)
 
 # visualization of the first image in dataset
@@ -64,7 +70,7 @@ model = RAM(device=device)
 
 print(f"\nRunning RAM fine-tuning for scale x{scale_factor}...\n")
 
-number_of_samples_to_be_trained = 50 # trainDS.LR.shape[0]
+number_of_samples_to_be_trained = 200 # trainDS.LR.shape[0]
 for i in range(0, number_of_samples_to_be_trained, bs):
     y = trainDS.LR[0:i+bs].to(device)
     x_gt = trainDS.HR[0:i+bs].to(device)
@@ -88,11 +94,15 @@ for i in range(0, number_of_samples_to_be_trained, bs):
     if i < number_of_samples_to_be_trained-1:
         model = finetune_mpi(model, data, physics, supervised=True, 
                             max_iter=max_iter, transform=None, lr=lr, 
-                            early_stop=False, batch_size=bs, validation=data) # try when the validation is the next image
+                            early_stop=False, batch_size=bs, validation=data, # try when the validation is the next image
+                            save_path=None, final_ckpt_path=None, is_last=False,)
     else:
         model = finetune_mpi(model, data, physics, supervised=True, 
                             max_iter=max_iter, transform=None, lr=lr, 
-                            early_stop=False, batch_size=bs, validation=data, is_last=True) # try when the validation is the next image
+                            early_stop=False, batch_size=bs, validation=data, 
+                            save_path=None,  # disable Trainer saves
+                            final_ckpt_path=final_ckpt_path,  # write once
+                            is_last=True) # try when the validation is the next image
     
 
 

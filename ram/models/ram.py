@@ -100,8 +100,10 @@ def finetune(model, data, physics, supervised=False, validation=None, max_iter=5
     return trainer.load_best_model()
 
 
-def finetune_mpi(model, data, physics, supervised=False, validation=None, max_iter=10, noise_loss='SURE', transform='shift', lr=1e-4,
-                 batch_size=1, device='cuda', early_stop=True, ckp_interval=9999999, is_last=False):
+def finetune_mpi(model, data, physics, supervised=False, validation=None, 
+                 max_iter=10, noise_loss='SURE', transform='shift', lr=1e-4,
+                 batch_size=1, device='cuda', early_stop=True, ckp_interval=9999999, 
+                 is_last=False, save_path=None, final_ckpt_path=None):
     r"""
     Finetune a model on a dataset.
     
@@ -177,17 +179,23 @@ def finetune_mpi(model, data, physics, supervised=False, validation=None, max_it
 
     batches_per_epoch = len(data) // batch_size
     eval_interval = max(3 // batches_per_epoch, 1) # do at least 3 gradient steps between evals
-    trainer = dinv.Trainer(model=model, physics=physics, eval_interval=eval_interval, ckp_interval=ckp_interval,
-                           metrics=losses[0], early_stop=early_stop, device=device,
-                           losses=losses, epochs=max_iter, optimizer=optimizer, train_dataloader=dataloader, eval_dataloader=val_dataloader)
+    trainer = dinv.Trainer(model=model, physics=physics, eval_interval=eval_interval, 
+                           ckp_interval=ckp_interval, metrics=losses[0], early_stop=early_stop, 
+                           device=device, losses=losses, epochs=max_iter, optimizer=optimizer, 
+                           train_dataloader=dataloader, eval_dataloader=val_dataloader,
+                           save_path=save_path
+                           )
 
     # finetune
     trainer.train()
 
-    # for mpi finetuning, if it is the latest image sample then save the model
-    if is_last:
-        trainer.save_model(f"ckp_{1}.pth.tar", 1)
-    # return best model
+    if is_last and final_ckpt_path:
+            torch.save(trainer.model.state_dict(), final_ckpt_path)
+            
+    # If we disabled saving, return the in-memory model
+    if not save_path:
+        return trainer.model
+
     return trainer.load_best_model()
 
 
