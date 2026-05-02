@@ -53,19 +53,25 @@ def finetune(model, data, physics, supervised=False, validation=None, max_iter=5
 
     denoising = isinstance(physics, dinv.physics.Denoising)
 
+    # if supervised:
+    #     losses = [dinv.loss.SupLoss()]
     if supervised:
-        losses = [dinv.loss.SupLoss()]
+        losses = [dinv.loss.SupLoss(metric=torch.nn.L1Loss())]
     else:
         losses = []
         if noise_loss == 'noiseless' or not isinstance(physics.noise_model, dinv.physics.NoiseModel):
             mc_loss = dinv.loss.MCLoss()
         elif noise_loss == 'SURE':
             if isinstance(physics.noise_model, dinv.physics.GaussianNoise):
-                mc_loss = dinv.loss.SureGaussianLoss(physics.noise_model.sigma)
+                sigma = torch.as_tensor(physics.noise_model.sigma, device=device)
+                mc_loss = dinv.loss.SureGaussianLoss(sigma)
             elif isinstance(physics.noise_model, dinv.physics.PoissonNoise):
-                mc_loss = dinv.loss.SurePoissonLoss(physics.noise_model.gain)
+                gain = torch.as_tensor(physics.noise_model.gain, device=device)
+                mc_loss = dinv.loss.SurePoissonLoss(gain)
             elif isinstance(physics.noise_model, dinv.physics.PoissonGaussianNoise):
-                mc_loss = dinv.loss.SurePGLoss(gain=physics.noise_model.gain, sigma=physics.noise_model.sigma)
+                gain = torch.as_tensor(physics.noise_model.gain, device=device)
+                sigma = torch.as_tensor(physics.noise_model.sigma, device=device)
+                mc_loss = dinv.loss.SurePGLoss(gain=gain, sigma=sigma)
         else:
             mc_loss = dinv.loss.SplittingLoss(split_ratio=.9)
 
@@ -90,6 +96,97 @@ def finetune(model, data, physics, supervised=False, validation=None, max_iter=5
 
     # finetune
     trainer.train()
+    # return best model
+    return trainer.load_best_model()
+
+
+def finetune_mpi(model, data, physics, supervised=False, validation=None, max_iter=10, noise_loss='SURE', transform='shift', lr=1e-4,
+                 batch_size=1, device='cuda', early_stop=True, ckp_interval=9999999, is_last=False):
+    r"""
+    Finetune a model on a dataset.
+    
+    :param model: RAM Model to finetune.
+    :param data: Dataset to finetune on, it can be simply a tensor of measurements or
+        a torch.utils.data.Dataset giving measurements (only self-supervised) or ground-truth references and measurements (supervised possible).
+    :param physics: Physics model to use for the finetuning.
+    :param supervised: If True, the model will be finetuned in a supervised way, otherwise it will be self-supervised (no ground-truth).
+    :param validation: Validation dataset to use for early stopping, if None the validation set will be split automatically from the training set.
+    :param max_iter: Maximum number of epochs to run the finetuning.
+    :param noise_loss: Type of noise loss to use, can be 'noiseless', 'SURE' or 'splitting'.
+    :param transform: Type of transformation for the Equivariant Imaging loss, can be 'shift' or 'rotate' (90 degrees).
+    :param lr: Learning rate for the optimizer.
+    :param batch_size: Batch size for the dataloader.
+    :param device: Device to use for the finetuning.
+    :return: The finetuned model.
+    """
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    data = to_dataset(data)
+
+    if validation is None:
+        if len(data) > 1:
+            train_split = int(len(data) * .8)
+            data, validation = torch.utils.data.random_split(data, [train_split, len(data) - train_split])
+        else:
+            print('Warning: No validation set provided, use more than a single image to improve validation.')
+            validation = data
+    else:
+        validation = to_dataset(validation)
+
+    dataloader = torch.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True)
+    val_dataloader = torch.utils.data.DataLoader(validation, batch_size=batch_size, shuffle=False)
+
+
+    denoising = isinstance(physics, dinv.physics.Denoising)
+
+    # if supervised:
+    #     losses = [dinv.loss.SupLoss()]
+    if supervised:
+        losses = [dinv.loss.SupLoss(metric=torch.nn.L1Loss())]
+    else:
+        losses = []
+        if noise_loss == 'noiseless' or not isinstance(physics.noise_model, dinv.physics.NoiseModel):
+            mc_loss = dinv.loss.MCLoss()
+        elif noise_loss == 'SURE':
+            if isinstance(physics.noise_model, dinv.physics.GaussianNoise):
+                sigma = torch.as_tensor(physics.noise_model.sigma, device=device)
+                mc_loss = dinv.loss.SureGaussianLoss(sigma)
+            elif isinstance(physics.noise_model, dinv.physics.PoissonNoise):
+                gain = torch.as_tensor(physics.noise_model.gain, device=device)
+                mc_loss = dinv.loss.SurePoissonLoss(gain)
+            elif isinstance(physics.noise_model, dinv.physics.PoissonGaussianNoise):
+                gain = torch.as_tensor(physics.noise_model.gain, device=device)
+                sigma = torch.as_tensor(physics.noise_model.sigma, device=device)
+                mc_loss = dinv.loss.SurePGLoss(gain=gain, sigma=sigma)
+        else:
+            mc_loss = dinv.loss.SplittingLoss(split_ratio=.9)
+
+        losses.append(mc_loss)
+
+        if not denoising and transform is not None:
+            if transform == 'shift':
+                t = dinv.transform.Shift(shift_max=.1)
+            elif transform == 'rotate':
+                t = dinv.transform.Rotate(multiples=90)
+            else:
+                raise ValueError(f"Unknown transform: {transform}")
+            losses.append(dinv.loss.EILoss(t, weight=.1))
+
+    print('Finetuning with losses: ' + str([l.__class__.__name__ for l in losses]))
+
+    batches_per_epoch = len(data) // batch_size
+    eval_interval = max(3 // batches_per_epoch, 1) # do at least 3 gradient steps between evals
+    trainer = dinv.Trainer(model=model, physics=physics, eval_interval=eval_interval, ckp_interval=ckp_interval,
+                           metrics=losses[0], early_stop=early_stop, device=device,
+                           losses=losses, epochs=max_iter, optimizer=optimizer, train_dataloader=dataloader, eval_dataloader=val_dataloader)
+
+    # finetune
+    trainer.train()
+
+    # for mpi finetuning, if it is the latest image sample then save the model
+    if is_last:
+        trainer.save_model(f"ckp_{1}.pth.tar", 1)
     # return best model
     return trainer.load_best_model()
 
@@ -177,6 +274,7 @@ class RAM(nn.Module):
 
         if device is not None:
             self.to(device)
+            self.device = device
 
     def constant2map(self, value, x):
         r"""
@@ -236,6 +334,8 @@ class RAM(nn.Module):
         else:
             num = (y.reshape(y.shape[0], -1).abs().mean(1))
 
+        # sigma = sigma.to(self.device)
+        sigma = sigma.to(self.device) if isinstance(sigma, torch.Tensor) else torch.tensor(sigma, device=self.device)
         snr = num / (sigma + 1e-4)  # SNR equivariant
         gamma = 1 / (1e-4 + 1 / (snr * f **2 ))  # TODO: check square-root / mean / check if we need to add a factor in front ?
         gamma = gamma[(...,) + (None,) * (x.dim() - 1)]

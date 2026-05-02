@@ -6,7 +6,7 @@ import numpy as np
 from scipy.io import loadmat
 import os
 from ram.mpi.utils.mpiDataset import MpiDataset
-from utils.mpiSuperResUtils import downsampleImageNP, interpImage, normalize
+from ram.mpi.utils.mpiSuperResUtils import downsampleImageNP, interpImage, normalize
 
 
 class loadMtxFromOpenMPI:
@@ -223,13 +223,12 @@ class loadMtxFromOpenMPI:
                 
             self.Bicubic_list.append(dnmInterp2)
 
-
-
-
-
-def get_train_data(file_dir, scale_factor, batch_size, step_num, n1=32, n2=32, snrThreshold=5, useAugmentation=False):
+def get_train_data(file_dir, scale_factor, batch_size, step_num, n1=32, n2=32, snrThreshold=5, useAugmentation=False, use_global_max_min=True):
     trainLoader = loadMtxFromOpenMPI(file_dir, scale_factor, n1, n2, True, True)
-    trainLoader.preprocessAndScaleMtxGlocally()
+    if use_global_max_min:
+        trainLoader.preprocessAndScaleMtxGlocally()
+    else:
+        trainLoader.preprocessAndScaleSysMtx()
     # by using global max min to normalize, the values became very similar to each other
     # print("global min max HR:", trainLoader.Hr_list[0][0][0][0])
     # print("global min max LR:", trainLoader.Lr_list[0][0][0][0])

@@ -76,51 +76,55 @@ def main() -> None:
     y = evalDS.LR.to(device)
     x_gt = evalDS.HR.to(device)
 
-    evalDS_bs = MpiDataset(
-        x_gt.clone(),
-        y.clone(),
-        maxhr=copymax,
-        minhr=copymin,
-        batch_size=bs,
-        up=0.7,
-        down=0.15
-    )
+    for i in range(0, y.shape[0], bs):
+        y_batch = y[i:i+bs].to(device)
+        x_gt_batch = x_gt[i:i+bs].to(device)
 
-    physics = MPISuperResPhysics(
-        dataset=evalDS_bs,
-        scale_factor=scale_factor
-    )
+        evalDS_bs = MpiDataset(
+            x_gt_batch.clone(),
+            y_batch.clone(),
+            maxhr=copymax,
+            minhr=copymin,
+            batch_size=bs,
+            up=0.7,
+            down=0.15
+        )
 
-    with torch.no_grad():
-        x_eval = eval_model(y, physics=physics)
+        physics = MPISuperResPhysics(
+            dataset=evalDS_bs,
+            scale_factor=scale_factor
+        )
 
-    num_show = 3
-    show_idx = torch.linspace(0, y.shape[0] - 1, num_show).long()
+        with torch.no_grad():
+            x_eval = eval_model(y_batch, physics=physics)
 
-    fig, axes = plt.subplots(3, num_show, figsize=(4 * num_show, 10))
-    for col, idx in enumerate(show_idx):
-        lr_mag = _to_magnitude_2ch(y[idx]).cpu().numpy()
-        gt_mag = _to_magnitude_2ch(x_gt[idx]).cpu().numpy()
-        pred_mag = _to_magnitude_2ch(x_eval[idx]).cpu().numpy()
+        num_show = 5
+        show_idx = torch.linspace(0, y_batch.shape[0] - 1, num_show).long()
 
-        axes[0, col].imshow(lr_mag, cmap="gray")
-        axes[0, col].set_title(f"LR input {idx.item()}")
-        axes[0, col].axis("off")
+        fig, axes = plt.subplots(3, num_show, figsize=(4 * num_show, 10))
+        for col, idx in enumerate(show_idx):
+            lr_mag = _to_magnitude_2ch(y[idx]).cpu().numpy()
+            gt_mag = _to_magnitude_2ch(x_gt[idx]).cpu().numpy()
+            pred_mag = _to_magnitude_2ch(x_eval[idx]).cpu().numpy()
 
-        axes[1, col].imshow(gt_mag, cmap="gray")
-        axes[1, col].set_title("HR ground truth")
-        axes[1, col].axis("off")
+            axes[0, col].imshow(lr_mag, cmap="gray")
+            axes[0, col].set_title(f"LR input {idx.item()}")
+            axes[0, col].axis("off")
 
-        axes[2, col].imshow(pred_mag, cmap="gray")
-        axes[2, col].set_title("Prediction")
-        axes[2, col].axis("off")
+            axes[1, col].imshow(gt_mag, cmap="gray")
+            axes[1, col].set_title("HR ground truth")
+            axes[1, col].axis("off")
 
-    plt.tight_layout()
-    plt.show()
+            axes[2, col].imshow(pred_mag, cmap="gray")
+            axes[2, col].set_title("Prediction")
+            axes[2, col].axis("off")
 
-    print(f"Loaded checkpoint: {ckpt_path}")
-    print("Reloaded model inference done.")
-    print(f"Max |x_gt - x_eval| = {(x_gt - x_eval).abs().max().item():.6e}")
+        plt.tight_layout()
+        plt.show()
+
+        print(f"Loaded checkpoint: {ckpt_path}")
+        # print("Reloaded model inference done.")
+        print(f"Max |x_gt - x_eval| = {(x_gt_batch - x_eval).abs().max().item():.6e}")
 
 
 if __name__ == "__main__":
