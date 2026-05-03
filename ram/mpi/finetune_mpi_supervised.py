@@ -1,3 +1,5 @@
+# .venv310/Scripts/python ram/mpi/finetune_mpi_supervised.py 
+
 import os
 import sys
 from datetime import datetime
@@ -17,13 +19,13 @@ device = dinv.utils.get_freer_gpu() if torch.cuda.is_available() else "cpu"
 
 from ram.mpi.utils.loadData import get_train_data
 
-bs = 1 # keep this one, do not change
-lr = 0.0001 # 0.000025
+bs = 25 # keep this one, do not change
+lr = 0.00005 # 0.000025
 step_num = 10e4 # 20e4
 scale_factor = 2
 file_dir = "ram/mpi/data/train/"
 useAugmentation = False
-max_iter = 5
+max_iter = 200
 visualize = True
 
 snrThreshold = 5
@@ -31,7 +33,7 @@ n1 = n2 = 32
 
 additional_info = ''
 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-final_ckpt_path = f"finetune_mpi_ckp_scale{scale_factor}x_iter{max_iter}_{timestamp}{additional_info}.pth.tar"
+final_ckpt_path = f"finetune_mpi_ckp_scale{scale_factor}x_bs{bs}_iter{max_iter}_{timestamp}{additional_info}.pth.tar"
 
 trainDS, copymax, copymin, epoch_nb = get_train_data(file_dir, scale_factor, bs, step_num, n1, n2, snrThreshold, useAugmentation, use_global_max_min=False)
 
@@ -72,8 +74,10 @@ print(f"\nRunning RAM fine-tuning for scale x{scale_factor}...\n")
 
 number_of_samples_to_be_trained = 200 # trainDS.LR.shape[0]
 for i in range(0, number_of_samples_to_be_trained, bs):
-    y = trainDS.LR[0:i+bs].to(device)
-    x_gt = trainDS.HR[0:i+bs].to(device)
+    print(f"Data index: {i}/{number_of_samples_to_be_trained}")
+
+    y = trainDS.LR[i:i+bs].to(device)
+    x_gt = trainDS.HR[i:i+bs].to(device)
 
     trainDS_bs = MpiDataset(
         x_gt.clone(),
@@ -90,8 +94,9 @@ for i in range(0, number_of_samples_to_be_trained, bs):
         scale_factor=scale_factor
     )
 
+    is_last_batch = (i + bs) >= number_of_samples_to_be_trained
     data = [x_gt, y]
-    if i < number_of_samples_to_be_trained-1:
+    if not is_last_batch:
         model = finetune_mpi(model, data, physics, supervised=True, 
                             max_iter=max_iter, transform=None, lr=lr, 
                             early_stop=False, batch_size=bs, validation=data, # try when the validation is the next image

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 # One way to check if the physics of operator A and A_adjoint is true is by visualizing it. 
 # If after doing A and then A_adjoint the result is similar to the input, then it is ok, 
 # otherwise, check the operator again.
-# TODO: visualize it
+# TODO: visualize it. DONE and the physics is correclty implemented.
 class MPISuperResPhysics(dinv.physics.Physics):
     def __init__(self, dataset, scale_factor):
         super().__init__()

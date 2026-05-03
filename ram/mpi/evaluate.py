@@ -1,4 +1,4 @@
-# .venv310/Scripts/python ram/mpi/evaluate.py --ckpt MPI_single_image_500ep_lr0.000025_lossL1/ckp_499.pth.tar
+# .venv310/Scripts/python ram/mpi/evaluate.py --ckpt finetune_mpi_ckp_scale2x_iter200_20260503-024537.pth.tar 
 
 import argparse
 import glob
